@@ -14,12 +14,13 @@ import (
 	"net/http"
 )
 
-// Custom ResponseWriter, which is used for controlling the output buffer.
+// ResponseWriter is the custom writer for http response.
 type ResponseWriter struct {
 	Status      int                 // HTTP status.
 	writer      http.ResponseWriter // The underlying ResponseWriter.
 	buffer      *bytes.Buffer       // The output buffer.
-	wroteHeader bool                // Is header wrote, avoiding error: superfluous/multiple response.WriteHeader call.
+	hijacked    bool                // Mark this request is hijacked or not.
+	wroteHeader bool                // Is header wrote or not, avoiding error: superfluous/multiple response.WriteHeader call.
 }
 
 // RawWriter returns the underlying ResponseWriter.
@@ -45,12 +46,17 @@ func (w *ResponseWriter) WriteHeader(status int) {
 
 // Hijack implements the interface function of http.Hijacker.Hijack.
 func (w *ResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	w.hijacked = true
 	return w.writer.(http.Hijacker).Hijack()
 }
 
-// OutputBuffer outputs the buffer to client.
-func (w *ResponseWriter) OutputBuffer() {
+// OutputBuffer outputs the buffer to client and clears the buffer.
+func (w *ResponseWriter) Flush() {
+	if w.hijacked {
+		return
+	}
 	if w.Status != 0 && !w.wroteHeader {
+		w.wroteHeader = true
 		w.writer.WriteHeader(w.Status)
 	}
 	// Default status text output.
